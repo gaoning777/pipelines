@@ -31,11 +31,12 @@ class FlipCoinOp(dsl.ContainerOp):
 
 class PrintOp(dsl.ContainerOp):
 
-  def __init__(self, name):
+  def __init__(self, name, message):
     super(PrintOp, self).__init__(
         name=name,
         image='alpine:3.6',
-        command=['echo', '"it was tail"'])
+        command=['echo'],
+        arguments=[message])
 
 
 @dsl.pipeline(
@@ -46,11 +47,11 @@ def flipcoinloop():
   flip = FlipCoinOp('flip')
 
   with dsl.Condition(flip.output=='tails'):
-    PrintOp('tails')
-    flip = FlipCoinOp('flip')
+    loop_items = [1, 2, 3, 4]
+    PrintOp('print', 'looping').loop(loop_items)
 
   with dsl.Condition(flip.output=='heads'):
-    PrintOp('heads')
+    PrintOp('print2', 'heads')
 
 if __name__ == '__main__':
   import kfp.compiler as compiler

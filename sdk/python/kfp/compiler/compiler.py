@@ -368,6 +368,10 @@ class Compiler(object):
             })
         arguments.sort(key=lambda x: x['name'])
         task['arguments'] = {'parameters': arguments}
+
+      if isinstance(sub_group, dsl.ContainerOp) and sub_group.loop_items:
+        task['withItems'] = sub_group.loop_items
+
       tasks.append(task)
     tasks.sort(key=lambda x: x['name'])
     template['dag'] = {'tasks': tasks}

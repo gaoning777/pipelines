@@ -59,6 +59,7 @@ class ContainerOp(object):
     self.volumes = []
     self.volume_mounts = []
     self.env_variables = []
+    self.loop_items = []
 
     matches = []
     if arguments:
@@ -267,6 +268,14 @@ class ContainerOp(object):
 
     self.node_selector[label_name] = value
     return self
+
+  def loop(self, loop_items):
+    """set up the loop configuration for the current contaienr op
+
+    Args:
+      loop_index: A list of items to iterate through
+    """
+    self.loop_items = loop_items
 
   def __repr__(self):
       return str({self.__class__.__name__: self.__dict__})
