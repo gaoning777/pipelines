@@ -28,6 +28,17 @@ class FlipCoinOp(dsl.ContainerOp):
                    'else \'tails\'; print(result)" | tee /tmp/output'],
         file_outputs={'output': '/tmp/output'})
 
+class GenerateLoopItems(dsl.ContainerOp):
+
+  def __init__(self, name):
+    super(GenerateLoopItems, self).__init__(
+        name=name,
+        image='python:alpine3.6',
+        command=['sh', '-c'],
+        arguments=['python -c "import json; import sys; json.dump([i for i in range(0,7)], sys.stdout)" | tee /tmp/output'],
+        file_outputs={'output': '/tmp/output'}
+    )
+
 
 class PrintOp(dsl.ContainerOp):
 
@@ -46,12 +57,14 @@ class PrintOp(dsl.ContainerOp):
 def flipcoinloop():
   flip = FlipCoinOp('flip')
 
-  with dsl.Condition(flip.output=='tails'):
-    loop_items = [1, 2, 3, 4]
-    PrintOp('print', 'looping').loop(loop_items)
-
   with dsl.Condition(flip.output=='heads'):
-    PrintOp('print2', 'heads')
+    #loop_items = [1, 2, 3, 4]
+    #PrintOp('print', 'looping').loop(loop_items)
+    loop = GenerateLoopItems(name='generateloop')
+    PrintOp('print', 'looping').loop(loop.output)
+
+  with dsl.Condition(flip.output=='tails'):
+    PrintOp('print2', 'tails')
 
 if __name__ == '__main__':
   import kfp.compiler as compiler

@@ -276,6 +276,8 @@ class ContainerOp(object):
       loop_index: A list of items to iterate through
     """
     self.loop_items = loop_items
+    if isinstance(loop_items, _pipeline_param.PipelineParam):
+      self.inputs += [loop_items]
 
   def __repr__(self):
       return str({self.__class__.__name__: self.__dict__})
