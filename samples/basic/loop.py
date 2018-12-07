@@ -54,14 +54,20 @@ class PrintOp(dsl.ContainerOp):
     name='pipeline flip coin loop',
     description='shows how to use dsl.Loop.'
 )
-def flipcoinloop():
+def flipcoinloop(loopargs="[1,2,3,4,5,6]"):
   flip = FlipCoinOp('flip')
 
   with dsl.Condition(flip.output=='heads'):
+    #basic loop
     #loop_items = [1, 2, 3, 4]
     #PrintOp('print', 'looping').loop(loop_items)
-    loop = GenerateLoopItems(name='generateloop')
-    PrintOp('print', 'looping').loop(loop.output)
+
+    #loop items from containerops
+    loop_container = GenerateLoopItems(name='generateloop')
+    PrintOp('print1', 'looping1').loop(loop_container.output)
+
+    #input argument
+    PrintOp('print3', 'looping3').loop(loopargs)
 
   with dsl.Condition(flip.output=='tails'):
     PrintOp('print2', 'tails')

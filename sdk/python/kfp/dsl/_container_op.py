@@ -273,7 +273,7 @@ class ContainerOp(object):
     """set up the loop configuration for the current contaienr op
 
     Args:
-      loop_index: A list of items to iterate through
+      loop_items: it is either a list of items or a PipelineParam
     """
     self.loop_items = loop_items
     if isinstance(loop_items, _pipeline_param.PipelineParam):

@@ -351,6 +351,7 @@ class Compiler(object):
         task['dependencies'] = group_dependencies
 
       # Generate arguments section for this task.
+      loop_items = {}
       if inputs.get(sub_group.name, None):
         arguments = []
         for param_name, dependent_name in inputs[sub_group.name]:
@@ -361,7 +362,7 @@ class Compiler(object):
               'value': '{{tasks.%s.outputs.parameters.%s}}' % (dependent_name, param_name)
             })
             if isinstance(sub_group, dsl.ContainerOp) and isinstance(sub_group.loop_items, dsl.PipelineParam) and sub_group.loop_items.op_name == dependent_name:
-              loop_param_name = param_name
+              loop_items[sub_group.loop_items.op_name] = param_name
           else:
             # The value comes from its parent.
             arguments.append({
@@ -375,8 +376,12 @@ class Compiler(object):
         if isinstance(sub_group.loop_items, list) and sub_group.loop_items:
           task['withItems'] = sub_group.loop_items
         elif isinstance(sub_group.loop_items, dsl.PipelineParam):
-          #TODO
-          task['withParams'] = '{{tasks.%s.outputs.parameters.%s}}' % (sub_group.loop_items.op_name, loop_param_name)
+          if sub_group.loop_items.op_name in loop_items:
+            #output from containerop
+            task['withParam'] = '{{tasks.%s.outputs.parameters.%s}}' % (sub_group.loop_items.op_name, loop_items[sub_group.loop_items.op_name])
+          else:
+            #output from argument
+            task['withParam'] = '{{inputs.parameters.%s}}' % (sub_group.loop_items.name)
       tasks.append(task)
     tasks.sort(key=lambda x: x['name'])
     template['dag'] = {'tasks': tasks}
