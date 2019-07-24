@@ -95,7 +95,6 @@ class VersionedDependency(object):
   def has_versions(self):
     return (self.has_min_version()) or (self.has_max_version())
 
-
 class DependencyHelper(object):
   """ DependencyHelper manages software dependency information """
   def __init__(self):
@@ -426,6 +425,90 @@ class ImageBuilder(object):
       docker_helper = DockerfileHelper(arc_dockerfile_name=self._arc_dockerfile_name)
       docker_helper.prepare_docker_tarball(dockerfile_path, local_tarball_path=local_tarball_path)
       self._build_image_from_tarball(local_tarball_path, namespace, timeout)
+
+class ContainerBuilder(object):
+  """
+    ContainerBuilder builds a container image from a directory that contains a dockerfile
+  """
+  def __init__(self, dirname, target_image, dockerfile, gcs_staging_base):
+    """
+    Args:
+      dirname: directory that contains the dockerfile and related build files
+      target_image: target image name
+      dockerfile: dockerfile name in the dirname
+      gcs_staging_base: gcs path that host temporary build files.
+    """
+    self.dirname = dirname
+    self.target_image = target_image
+    self.dockerfile = dockerfile
+    self.gcs_staging_base = gcs_staging_base
+
+  def _generate_kaniko_spec(self, namespace, context_path, dockerfile):
+    """_generate_kaniko_yaml generates kaniko job yaml based on a template yaml """
+    content = {
+        'apiVersion': 'v1',
+        'metadata': {
+            'generateName': 'kaniko-',
+            'namespace': namespace,
+        },
+        'kind': 'Pod',
+        'spec': {
+            'restartPolicy': 'Never',
+            'containers': [{
+                'name': 'kaniko',
+                'args': ['--cache=true',
+                         '--dockerfile=' + dockerfile,
+                         '--context=' + context_path,
+                         '--destination=' + self.target_image],
+                'image': 'gcr.io/kaniko-project/executor@sha256:78d44ec4e9cb5545d7f85c1924695c89503ded86a59f92c7ae658afa3cff5400',
+                'env': [{
+                    'name': 'GOOGLE_APPLICATION_CREDENTIALS',
+                    'value': '/secret/gcp-credentials/user-gcp-sa.json'
+                }],
+                'volumeMounts': [{
+                    'mountPath': '/secret/gcp-credentials',
+                    'name': 'gcp-credentials',
+                }],
+            }],
+            'volumes': [{
+                'name': 'gcp-credentials',
+                'secret': {
+                    'secretName': 'user-gcp-sa',
+                },
+            }],
+            'serviceAccountName': 'default'}
+    }
+
+    return content
+
+  def build(self, namespace, timeout):
+    """
+    Args:
+      namespace: namespace to run the k8s pod
+      timeout: timeout
+    """
+    # Generate local build files
+    with tempfile.TemporaryDirectory() as local_build_dir:
+      logging.info('Generate build files.')
+      local_tarball_path = os.path.join(local_build_dir, 'docker.tmp.tar.gz')
+      with tarfile.open(local_tarball_path, 'w:gz') as tarball:
+        tarball.add(self.dirname)
+      # Upload to the context
+      context = os.path.join(self.gcs_staging_base, str(uuid.uuid4()) + '.tar.gz')
+      GCSHelper.upload_gcs_file(local_tarball_path, context)
+
+    # Run kaniko job
+    kaniko_spec = self._generate_kaniko_spec(namespace=namespace,
+                                             context_path=context,
+                                             dockerfile=self.dockerfile)
+    logging.info('Start a kaniko job for build.')
+    from ._k8s_helper import K8sHelper
+    k8s_helper = K8sHelper()
+    k8s_helper.run_job(kaniko_spec, timeout)
+    logging.info('Kaniko job complete.')
+
+    # Clean up
+    GCSHelper.remove_gcs_blob(context)
 
 def _configure_logger(logger):
   """ _configure_logger configures the logger such that the info level logs
