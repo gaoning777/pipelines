@@ -426,6 +426,87 @@ class ImageBuilder(object):
       docker_helper.prepare_docker_tarball(dockerfile_path, local_tarball_path=local_tarball_path)
       self._build_image_from_tarball(local_tarball_path, namespace, timeout)
 
+#TODO: currently it supports single output, future support for multiple return values
+def _func_to_entrypoint(self, component_func, python_version='python3'):
+  """
+  args:
+    python_version (str): choose python2 or python3, default is python3
+  """
+  if python_version not in ['python2', 'python3']:
+    raise ValueError('python_version has to be either python2 or python3')
+
+  fullargspec = inspect.getfullargspec(component_func)
+  annotations = fullargspec[6]
+  input_args = fullargspec[0]
+  inputs = {}
+  for key, value in annotations.items():
+    if key != 'return':
+      inputs[key] = value
+  if len(input_args) != len(inputs):
+    raise Exception('Some input arguments do not contain annotations.')
+  if 'return' in  annotations and annotations['return'] not in [int, float, str, bool]:
+    raise Exception('Output type not supported and supported types are [int, float, str, bool]')
+  # inputs is a dictionary with key of argument name and value of type class
+  # output is a type class, e.g. str and int.
+
+  # Follow the same indentation with the component source codes.
+  component_src = inspect.getsource(component_func)
+  match = re.search(r'\n([ \t]+)[\w]+', component_src)
+  indentation = match.group(1) if match else '\t'
+  codegen = CodeGenerator(indentation=indentation)
+  # Function signature
+  new_func_name = 'wrapper_' + component_func.__name__
+  codegen.begin()
+  func_signature = 'def ' + new_func_name + '('
+  for input_arg in input_args:
+    func_signature += input_arg + ','
+  func_signature += '_output_file):'
+  codegen.writeline(func_signature)
+
+  # Call user function
+  codegen.indent()
+  call_component_func = 'output = ' + component_func.__name__ + '('
+  for input_arg in input_args:
+    call_component_func += inputs[input_arg].__name__ + '(' + input_arg + '),'
+  call_component_func = call_component_func.rstrip(',')
+  call_component_func += ')'
+  codegen.writeline(call_component_func)
+
+  # Serialize output
+  codegen.writeline('import os')
+  codegen.writeline('os.makedirs(os.path.dirname(_output_file))')
+  codegen.writeline('with open(_output_file, "w") as data:')
+  codegen.indent()
+  codegen.writeline('data.write(str(output))')
+  wrapper_code = codegen.end()
+
+  # CLI codes
+  codegen.begin()
+  codegen.writeline('import argparse')
+  codegen.writeline('parser = argparse.ArgumentParser(description="Parsing arguments")')
+  for input_arg in input_args:
+    codegen.writeline('parser.add_argument("' + input_arg + '", type=' + inputs[input_arg].__name__ + ')')
+  codegen.writeline('parser.add_argument("_output_file", type=str)')
+  codegen.writeline('args = vars(parser.parse_args())')
+  codegen.writeline('')
+  codegen.writeline('if __name__ == "__main__":')
+  codegen.indent()
+  codegen.writeline(new_func_name + '(**args)')
+
+  # Remove the decorator from the component source
+  src_lines = component_src.split('\n')
+  start_line_num = 0
+  for line in src_lines:
+    if line.startswith('def '):
+      break
+    start_line_num += 1
+  if python_version == 'python2':
+    src_lines[start_line_num] = 'def ' + component_func.__name__ + '(' + ', '.join((inspect.getfullargspec(component_func).args)) + '):'
+  dedecorated_component_src = '\n'.join(src_lines[start_line_num:])
+
+  complete_component_code = dedecorated_component_src + '\n' + wrapper_code + '\n' + codegen.end()
+  return complete_component_code
+
 class ContainerBuilder(object):
   """
     ContainerBuilder builds a container image from a directory that contains a dockerfile
